@@ -1,0 +1,20 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+dist/
+build/
+
+# Env
+.env
+.env.*
+
+# Tools
+.DS_Store
+.idea/
+*.iml
+
+# Template repo and generated cache (both cloned/built at runtime)
+awesome-gpt-image-2/
+gallery_words.json

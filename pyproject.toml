@@ -1,0 +1,11 @@
+[project]
+name = "img-inspire"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "fastapi>=0.115.0",
+    "jieba>=0.42.1",
+    "uvicorn[standard]>=0.30.0",
+]
