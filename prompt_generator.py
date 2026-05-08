@@ -3,18 +3,28 @@ import re
 
 from placeholder_registry import Lang, random_value
 from template_parser import Template
+from votes import weight as vote_weight
 
 
-def fill_template(template: Template, lang: Lang) -> str:
-    if not template.placeholders:
-        return template.body  # gallery examples are complete — no filling needed
+Segment = dict  # {"text": str, "random": bool}
+
+
+def fill_template(template: Template, lang: Lang) -> tuple[str, list[Segment]]:
     body = template.body
-    for placeholder in template.placeholders:
-        value = random_value(placeholder, lang)
-        body = body.replace(f"[{placeholder}]", value, 1)
-    # Catch any brackets missed by the placeholder list
-    body = re.sub(r"\[([^\[\]]+)\]", lambda m: random_value(m.group(1), lang), body)
-    return body
+    if not template.placeholders:
+        return body, [{"text": body, "random": False}]
+
+    segments: list[Segment] = []
+    last_end = 0
+    for m in re.finditer(r"\[([^\[\]]+)\]", body):
+        if m.start() > last_end:
+            segments.append({"text": body[last_end:m.start()], "random": False})
+        segments.append({"text": random_value(m.group(1), lang), "random": True})
+        last_end = m.end()
+    if last_end < len(body):
+        segments.append({"text": body[last_end:], "random": False})
+
+    return "".join(s["text"] for s in segments), segments
 
 
 _IMAGE_PREFIX: dict[Lang, str] = {
@@ -26,6 +36,11 @@ _IMAGE_PREFIX: dict[Lang, str] = {
 GALLERY_CATEGORY = "精选案例"
 
 
+def _pick(pool: list[Template], votes: dict) -> Template:
+    weights = [vote_weight(t.id, votes) for t in pool]
+    return random.choices(pool, weights=weights, k=1)[0]
+
+
 def generate(
     templates: dict[str, list[Template]],
     lang: Lang,
@@ -33,22 +48,26 @@ def generate(
     template_id: str | None = None,
     has_image: bool = False,
     gallery: list[Template] | None = None,
-) -> tuple[str, Template]:
+    votes: dict | None = None,
+) -> tuple[str, list[Segment], Template]:
     gallery = gallery or []
+    votes = votes or {}
     if template_id is not None:
         template = _find_by_id(templates, template_id, gallery)
     elif category == GALLERY_CATEGORY:
-        template = random.choice(gallery)
+        template = _pick(gallery, votes)
     elif category and category in templates:
-        template = random.choice(templates[category])
+        template = _pick(templates[category], votes)
     else:
         all_templates = [t for tmps in templates.values() for t in tmps] + gallery
-        template = random.choice(all_templates)
+        template = _pick(all_templates, votes)
 
-    prompt = fill_template(template, lang)
+    prompt, segments = fill_template(template, lang)
     if has_image:
-        prompt = _IMAGE_PREFIX[lang] + prompt
-    return prompt, template
+        prefix = _IMAGE_PREFIX[lang]
+        segments = [{"text": prefix, "random": False}] + segments
+        prompt = prefix + prompt
+    return prompt, segments, template
 
 
 def _find_by_id(templates: dict[str, list[Template]], tid: str, gallery: list[Template]) -> Template:

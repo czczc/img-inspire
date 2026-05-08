@@ -74,8 +74,12 @@ def parse_gallery(repo_path: Path) -> dict[str, list[Template]]:
     result: dict[str, list[Template]] = {}
     example_index = 0
 
-    for fname in ("gallery-part-1.md", "gallery-part-2.md"):
-        path = repo_path / "docs" / fname
+    _extra = Path(__file__).parent / "extra_gallery"
+    _search = [
+        *[(repo_path / "docs" / f) for f in ("gallery-part-1.md", "gallery-part-2.md")],
+        *sorted(_extra.glob("*.md")) if _extra.exists() else [],
+    ]
+    for path in _search:
         if not path.exists():
             continue
         md = path.read_text(encoding="utf-8")

@@ -115,8 +115,6 @@
       line-height: 1.7;
       color: #1a1a1a;
       width: 100%;
-      resize: none;
-      overflow: hidden;
       min-height: 120px;
       font-family: inherit;
       outline: none;
@@ -125,10 +123,15 @@
     .prompt-box:focus {
       border-color: #999;
     }
+    .random-word {
+      color: #c07000;
+      font-weight: 500;
+    }
 
     .output-actions {
       display: flex;
       gap: 10px;
+      align-items: center;
     }
 
     .btn-copy, .btn-regen {
@@ -145,6 +148,25 @@
     .btn-copy.copied { background: #2d8a4e; border-color: #2d8a4e; }
     .btn-regen { background: #fff; color: #1a1a1a; }
     .btn-regen:hover { background: #f0f0f0; }
+
+    .vote-buttons {
+      display: flex;
+      gap: 6px;
+      margin-left: auto;
+    }
+    .btn-vote {
+      padding: 7px 12px;
+      border-radius: 8px;
+      font-size: 1rem;
+      line-height: 1;
+      cursor: pointer;
+      border: 1px solid #ddd;
+      background: #fff;
+      transition: background 0.15s, border-color 0.15s;
+    }
+    .btn-vote:hover { background: #f0f0f0; }
+    .btn-vote.active-up { background: #e8f5e9; border-color: #66bb6a; }
+    .btn-vote.active-down { background: #fce4ec; border-color: #ef9a9a; }
 
     .image-section {
       width: 100%;
@@ -203,16 +225,21 @@
     <div class="output-meta">
       <strong id="out-category"></strong> · <span id="out-template"></span>
     </div>
-    <textarea class="prompt-box" id="prompt-text" spellcheck="false"></textarea>
     <div class="output-actions">
       <button class="btn-copy" id="btn-copy" onclick="doCopy()">Copy</button>
       <button class="btn-regen" onclick="doRegenerate()">Regenerate</button>
+      <div class="vote-buttons">
+        <button class="btn-vote" id="btn-up" onclick="doVote('up')" title="Show more like this">👍</button>
+        <button class="btn-vote" id="btn-down" onclick="doVote('down')" title="Show less like this">👎</button>
+      </div>
     </div>
+    <div class="prompt-box" id="prompt-text" contenteditable="true" spellcheck="false"></div>
   </div>
 
   <script>
     let lang = 'zh';
     let lastTemplateId = null;
+    let currentVote = null;
 
     async function init() {
       const res = await fetch('/api/categories');
@@ -251,9 +278,8 @@
 
         document.getElementById('out-category').textContent = data.category;
         document.getElementById('out-template').textContent = data.template_name;
-        const ta = document.getElementById('prompt-text');
-        ta.value = data.prompt;
-        autoResize(ta);
+        renderSegments(document.getElementById('prompt-text'), data.segments);
+        setVoteState(null, data.up ?? 0, data.down ?? 0);
         document.getElementById('output').classList.add('visible');
 
         const copyBtn = document.getElementById('btn-copy');
@@ -268,8 +294,43 @@
       if (lastTemplateId) doGenerate(lastTemplateId);
     }
 
+    function setVoteState(vote, up, down) {
+      currentVote = vote;
+      const upBtn = document.getElementById('btn-up');
+      const downBtn = document.getElementById('btn-down');
+      upBtn.className = 'btn-vote' + (vote === 'up' ? ' active-up' : '');
+      downBtn.className = 'btn-vote' + (vote === 'down' ? ' active-down' : '');
+      upBtn.textContent = up > 0 ? `👍 ${up}` : '👍';
+      downBtn.textContent = down > 0 ? `👎 ${down}` : '👎';
+    }
+
+    async function doVote(direction) {
+      if (!lastTemplateId) return;
+      const res = await fetch('/api/vote', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({template_id: lastTemplateId, direction}),
+      });
+      const data = await res.json();
+      setVoteState(direction, data.up ?? 0, data.down ?? 0);
+    }
+
+    function renderSegments(el, segments) {
+      el.innerHTML = '';
+      for (const seg of segments) {
+        if (seg.random) {
+          const span = document.createElement('span');
+          span.className = 'random-word';
+          span.textContent = seg.text;
+          el.appendChild(span);
+        } else {
+          el.appendChild(document.createTextNode(seg.text));
+        }
+      }
+    }
+
     async function doCopy() {
-      const text = document.getElementById('prompt-text').value;
+      const text = document.getElementById('prompt-text').innerText;
       await navigator.clipboard.writeText(text);
       const btn = document.getElementById('btn-copy');
       btn.textContent = 'Copied!';
@@ -279,15 +340,6 @@
         btn.classList.remove('copied');
       }, 2000);
     }
-
-    function autoResize(el) {
-      el.style.height = 'auto';
-      el.style.height = el.scrollHeight + 'px';
-    }
-
-    document.getElementById('prompt-text').addEventListener('input', function() {
-      autoResize(this);
-    });
 
     function previewImage(e) {
       const file = e.target.files[0];

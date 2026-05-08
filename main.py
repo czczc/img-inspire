@@ -10,6 +10,7 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
 import placeholder_registry
+import votes as vote_store
 from gallery_miner import mine
 from prompt_generator import generate
 from template_parser import Template, parse_gallery, parse_templates
@@ -46,6 +47,17 @@ def categories():
     return list(_templates.keys()) + [GALLERY_CATEGORY]
 
 
+class VoteRequest(BaseModel):
+    template_id: str
+    direction: Literal["up", "down"]
+
+
+@app.post("/api/vote")
+def api_vote(req: VoteRequest):
+    result = vote_store.record(req.template_id, req.direction)
+    return {"template_id": req.template_id, **result}
+
+
 class GenerateRequest(BaseModel):
     category: str | None = None
     lang: Literal["en", "zh"] = "zh"
@@ -57,14 +69,25 @@ class GenerateRequest(BaseModel):
 def api_generate(req: GenerateRequest):
     if not _templates:
         raise HTTPException(status_code=503, detail="Templates not loaded")
+    votes = vote_store.load()
     try:
-        prompt, template = generate(
+        prompt, segments, template = generate(
             _templates, req.lang, req.category, req.template_id, req.has_image,
             gallery=_gallery if req.category in (None, GALLERY_CATEGORY) else [],
+            votes=votes,
         )
     except ValueError as e:
         raise HTTPException(status_code=404, detail=str(e))
-    return {"prompt": prompt, "template_id": template.id, "category": template.category, "template_name": template.name}
+    counts = vote_store.get_info(template.id, votes)
+    return {
+        "prompt": prompt,
+        "segments": segments,
+        "template_id": template.id,
+        "category": template.category,
+        "template_name": template.name,
+        "up": counts["up"],
+        "down": counts["down"],
+    }
 
 
 def _open_browser():
